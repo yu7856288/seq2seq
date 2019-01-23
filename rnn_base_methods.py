@@ -1,4 +1,5 @@
 
+
 import tensorflow as tf
 import numpy as np 
 batch_size=2 #批处理大小
@@ -8,6 +9,8 @@ hidden_size=3 #隐藏层神经元
 max_time=5 #最大时间步长
  
 depth=6 #输入层神经元数量，如词向量维度
+# basic rnn cell 和 lstm cell 的output不同， basic rnn output 和hidden state 相同，输出需transform,lstm
+# 输出需softmax
 
 rnn_cell = tf.nn.rnn_cell.BasicRNNCell(hidden_size)
 basic_rnn_input_one_step=tf.Variable(tf.random_normal([batch_size,depth])) 
