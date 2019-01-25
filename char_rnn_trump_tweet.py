@@ -23,7 +23,7 @@ def read_data(filename, vocab, sequence_length, overlap):
         for text in lines:
             text = vocab_encode(text, vocab)####转为序号
             for start in range(0, len(text) - sequence_length, overlap):
-                chunk = text[start: start + sequence_length]
+                chunk = text[start: start + sequence_length-10]
                 chunk += [0] * (sequence_length - len(chunk))###不满sequence_length size的chunk 则补0
                 yield chunk
 
@@ -72,7 +72,10 @@ class CharRNN(object):
 
         # this line to calculate the real length of seq
         # all seq are padded to be of the same length, which is sequence_length
-        length = tf.reduce_sum(tf.reduce_max(tf.sign(seq), 2), 1)####z这行代码可能有误
+        length = tf.reduce_sum(tf.sign(self.seq), 1)
+        # length = tf.reduce_sum(tf.reduce_max(tf.sign(seq), 2), 1)####z这行代码可能有误
+
+        self.length=length
         self.output, self.out_state = tf.nn.dynamic_rnn(cells, seq, length, self.in_state) ###output与GRU的隐含值的h一致
         ###output shape [64,50,256]
 
@@ -113,7 +116,8 @@ class CharRNN(object):
                 ###batch shape [64,50]
                 output_,logit_=sess.run([self.output,self.logits],feed_dict={self.seq:batch})
                 # for batch in read_batch(read_data(DATA_PATH, vocab)):
-                batch_loss, _ = sess.run([self.loss, self.opt], {self.seq: batch})
+                batch_loss, _ ,length_= sess.run([self.loss, self.opt,self.length], {self.seq: batch})
+                print(length_)
                 if (iteration + 1) % self.skip_step == 0:
                     print('Iter {}. \n    Loss {}. Time {}'.format(iteration, batch_loss, time.time() - start))
                     self.online_infer(sess)
@@ -140,7 +144,8 @@ class CharRNN(object):
                     for i in range(len(state)):
                         feed.update({self.in_state[i]: state[i]})
                 index, state,logits_= sess.run([self.sample, self.out_state,self.logits], feed) ####执行一次，得到一个sample，需要更新in_state,因为这个是序列生成，只能一步一步跑，没法用dynamic_rnn
-                print(logits_.shape)
+                # print(logits_.shape)
+                ###此时的logit_ shape 为[1,1,87]  batch size 为1，时间步为1，是一个char，通过one hot 编码后的值
                 sentence += vocab_decode(index, self.vocab)
             print('\t' + sentence)
 
