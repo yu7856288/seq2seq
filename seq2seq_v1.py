@@ -25,10 +25,8 @@ plt.plot(x[85:], y[85:], 'c:')
 plt.legend(handles = [l1, l2], loc = 'upper left')
 plt.show()
 
-
-
-input_seq_len = 15
-output_seq_len = 20
+encoder_seq_len = 15
+decoder_seq_len = 20
 
 x = np.linspace(0, 30, 105)
 train_data_x = x[:85]
@@ -43,23 +41,20 @@ def noise_func(x, noise_factor = 1):
 def generate_y_values(x):
     return true_signal(x) + noise_func(x)
 
-def generate_train_samples(x = train_data_x, batch_size = 10, input_seq_len = input_seq_len, output_seq_len = output_seq_len):
+def generate_train_samples(x = train_data_x, batch_size = 10, encoder_seq_len = encoder_seq_len, decoder_seq_len = decoder_seq_len):
 
-    total_start_points = len(x) - input_seq_len - output_seq_len
-    start_x_idx = np.random.choice(range(total_start_points), batch_size)
+    total_start_points = len(x) - encoder_seq_len - decoder_seq_len
+    start_x_idx = np.random.choice(range(total_start_points), batch_size) ####一个序列，batch size大小，
 
-    input_seq_x = [x[i:(i+input_seq_len)] for i in start_x_idx]
-    output_seq_x = [x[(i+input_seq_len):(i+input_seq_len+output_seq_len)] for i in start_x_idx]
+    input_seq_x = [x[i:(i+encoder_seq_len)] for i in start_x_idx] ###encoder_seq_len 长度的 数据
+    output_seq_x = [x[(i+encoder_seq_len):(i+encoder_seq_len+decoder_seq_len)] for i in start_x_idx] ####ouput_seq_len长度的输出数据（decoder）
 
-    input_seq_y = [generate_y_values(x) for x in input_seq_x]
-    output_seq_y = [generate_y_values(x) for x in output_seq_x]
+    input_seq_y = [generate_y_values(x) for x in input_seq_x] ###为encoder的input
+    output_seq_y = [generate_y_values(x) for x in output_seq_x]###为decoder的input
 
-    #batch_x = np.array([[true_signal()]])
     return np.array(input_seq_y), np.array(output_seq_y)
 
-
-
-input_seq, output_seq = generate_train_samples(batch_size=10)
+encoder_seq, decoder_seq = generate_train_samples(batch_size=10) ####模拟生成encoder和decoder的数据
 
 ###噪声数据可视化
 results = []
@@ -67,9 +62,10 @@ for i in range(100):
     temp = generate_y_values(x)
     results.append(temp)
 results = np.array(results)
+print(results.shape)
 
 for i in range(100):
-    l1, = plt.plot(results[i].reshape(105, -1), 'co', lw = 0.1, alpha = 0.05, label = 'noisy training data')
+    l1, = plt.plot(results[i].reshape(105, -1), 'co', lw = 0.1, alpha = 0.05, label = 'noisy training data')####把批量噪声数据可视化，此处画100条数据
 
 l2, = plt.plot(true_signal(x), 'm', label = 'hidden true signal')
 plt.legend(handles = [l1, l2], loc = 'lower left')
@@ -83,9 +79,9 @@ lambda_l2_reg = 0.003
 
 ## Network Parameters
 # length of input signals
-input_seq_len = 15
+encoder_seq_len = 15
 # length of output signals
-output_seq_len = 20
+decoder_seq_len = 20
 # size of LSTM Cell
 hidden_dim = 64
 # num of input signals
@@ -95,7 +91,7 @@ output_dim = 1
 # num of stacked lstm layers
 num_stacked_layers = 2
 # gradient clipping - to avoid gradient exploding
-GRADIENT_CLIPPING = 2.5
+GRADIENT_CLIPPING = 2.5 ###梯度clip 阈值
 
 
 
@@ -110,42 +106,36 @@ def build_graph(feed_previous = False):
                   collections=[tf.GraphKeys.GLOBAL_STEP, tf.GraphKeys.GLOBAL_VARIABLES])
 
     weights = {
-        'out': tf.get_variable('Weights_out', \
-                               shape = [hidden_dim, output_dim], \
-                               dtype = tf.float32, \
-                               initializer = tf.truncated_normal_initializer()),
+        'out': tf.get_variable('Weights_out', shape = [hidden_dim, output_dim],dtype = tf.float32, initializer = tf.truncated_normal_initializer()),
     }
     biases = {
-        'out': tf.get_variable('Biases_out', \
-                               shape = [output_dim], \
-                               dtype = tf.float32, \
-                               initializer = tf.constant_initializer(0.)),
+        'out': tf.get_variable('Biases_out', shape = [output_dim], dtype = tf.float32, initializer = tf.constant_initializer(0.)),
     }
 
     with tf.variable_scope('Seq2seq'):
         # Encoder: inputs
-        enc_inp = [
+        encoder_inputs = [
             tf.placeholder(tf.float32, shape=(None, input_dim), name="inp_{}".format(t))
-               for t in range(input_seq_len)
+               for t in range(encoder_seq_len)
         ]
 
         # Decoder: target outputs
         target_seq = [
             tf.placeholder(tf.float32, shape=(None, output_dim), name="y".format(t))
-              for t in range(output_seq_len)
+              for t in range(decoder_seq_len)
         ]
-        dec_inp = [ tf.zeros_like(target_seq[0], dtype=tf.float32, name="GO") ] + target_seq[:-1]
+        decoder_inputs = [ tf.zeros_like(target_seq[0], dtype=tf.float32, name="GO") ] + target_seq[:-1]
 
         with tf.variable_scope('LSTMCell'):
-            cells = []
+            layers = []
             for i in range(num_stacked_layers):
                 with tf.variable_scope('RNN_{}'.format(i)):
-                    cells.append(tf.contrib.rnn.LSTMCell(hidden_dim))
-            cell = tf.contrib.rnn.MultiRNNCell(cells)
+                    layers.append(tf.nn.rnn_cell.LSTMCell(hidden_dim))
+            cells = tf.nn.rnn_cell.MultiRNNCell(layers)
 
         def _rnn_decoder(decoder_inputs,
                         initial_state,
-                        cell,
+                        cells,
                         loop_function=None,
                         scope=None):
           with tf.variable_scope(scope or "rnn_decoder"):
@@ -158,7 +148,7 @@ def build_graph(feed_previous = False):
                   inp = loop_function(prev, i)
               if i > 0:
                 tf.get_variable_scope().reuse_variables()
-              output, state = cell(inp, state)
+              output, state = cells.call(inp, state)
               outputs.append(output)
               if loop_function is not None:
                 prev = output
@@ -172,7 +162,7 @@ def build_graph(feed_previous = False):
                               scope=None):
 
           with tf.variable_scope(scope or "basic_rnn_seq2seq"):
-            enc_cell = copy.deepcopy(cell)
+            enc_cell = copy.deepcopy(cell) ####deep copy 两个不同的cell
             _, enc_state = tf.nn.static_rnn(enc_cell, encoder_inputs, dtype=dtype)
             if feed_previous:
                 return _rnn_decoder(decoder_inputs, enc_state, cell, _loop_function)
@@ -180,13 +170,13 @@ def build_graph(feed_previous = False):
                 return _rnn_decoder(decoder_inputs, enc_state, cell)
 
         def _loop_function(prev, _):
-         
+
           return tf.matmul(prev, weights['out']) + biases['out']
 
         dec_outputs, dec_memory = _basic_rnn_seq2seq(
-            enc_inp,
-            dec_inp,
-            cell,
+            encoder_inputs,
+            decoder_inputs,
+            cells,
             feed_previous = feed_previous
         )
 
@@ -218,7 +208,7 @@ def build_graph(feed_previous = False):
     saver = tf.train.Saver
 
     return dict(
-        enc_inp = enc_inp,
+        encoder_inputs = encoder_inputs,
         target_seq = target_seq,
         train_op = optimizer,
         loss=loss,
@@ -248,8 +238,8 @@ with tf.Session() as sess:
     for i in range(total_iteractions):
         batch_input, batch_output = generate_train_samples(batch_size=batch_size)
 
-        feed_dict = {rnn_model['enc_inp'][t]: batch_input[:,t].reshape(-1,input_dim) for t in range(input_seq_len)}
-        feed_dict.update({rnn_model['target_seq'][t]: batch_output[:,t].reshape(-1,output_dim) for t in range(output_seq_len)})
+        feed_dict = {rnn_model['encoder_inputs'][t]: batch_input[:,t].reshape(-1,input_dim) for t in range(encoder_seq_len)}
+        feed_dict.update({rnn_model['target_seq'][t]: batch_output[:,t].reshape(-1,output_dim) for t in range(decoder_seq_len)})
         _, loss_t = sess.run([rnn_model['train_op'], rnn_model['loss']], feed_dict)
         print(loss_t)
 
@@ -271,8 +261,8 @@ with tf.Session() as sess:
 
     saver = rnn_model['saver']().restore(sess, os.path.join('./', 'univariate_ts_model0'))
 
-    feed_dict = {rnn_model['enc_inp'][t]: test_seq_input[t].reshape(1,1) for t in range(input_seq_len)}
-    feed_dict.update({rnn_model['target_seq'][t]: np.zeros([1, output_dim]) for t in range(output_seq_len)})
+    feed_dict = {rnn_model['encoder_inputs'][t]: test_seq_input[t].reshape(1,1) for t in range(encoder_seq_len)}
+    feed_dict.update({rnn_model['target_seq'][t]: np.zeros([1, output_dim]) for t in range(decoder_seq_len)})
     final_preds = sess.run(rnn_model['reshaped_outputs'], feed_dict)
 
     final_preds = np.concatenate(final_preds, axis = 1)
